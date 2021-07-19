@@ -4,223 +4,183 @@
 
 
 import re
-import pyrogram
+import pymongo
 
-from pyrogram import (
-    filters,
-    Client
-)
+from pymongo.errors import DuplicateKeyError
+from marshmallow.exceptions import ValidationError
 
-from pyrogram.types import (
-    InlineKeyboardButton, 
-    InlineKeyboardMarkup, 
-    Message,
-    CallbackQuery
-)
+from config import DATABASE_URI, DATABASE_NAME
 
-from bot import Bot
-from script import script
-from database.mdb import searchquery
-from plugins.channel import deleteallfilters
-from config import AUTH_USERS
 
-BUTTONS = {}
- 
-@Client.on_message(filters.group & filters.text)
-async def filter(client: Bot, message: Message):
-    if re.findall("((^\/|^,|^!|^\.|^[\U0001F600-\U000E007F]).*)", message.text):
-        return
+myclient = pymongo.MongoClient(DATABASE_URI)
+mydb = myclient[DATABASE_NAME]
 
-    if 2 < len(message.text) < 50:    
-        btn = []
 
-        group_id = message.chat.id
-        name = message.text
 
-        filenames, links = await searchquery(group_id, name)
-        if filenames and links:
-            for filename, link in zip(filenames, links):
-                btn.append(
-                    [InlineKeyboardButton(text=f"{filename}",url=f"{link}")]
-                )
+async def savefiles(docs, group_id):
+    mycol = mydb[str(group_id)]
+    
+    try:
+        mycol.insert_many(docs, ordered=False)
+    except Exception:
+        pass
+
+
+async def channelgroup(channel_id, channel_name, group_id, group_name):
+    mycol = mydb["ALL DETAILS"]
+
+    channel_details = {
+        "channel_id" : channel_id,
+        "channel_name" : channel_name
+    }
+
+    data = {
+        '_id': group_id,
+        'group_name' : group_name,
+        'channel_details' : [channel_details],
+    }
+    
+    if mycol.count_documents( {"_id": group_id} ) == 0:
+        try:
+            mycol.insert_one(data)
+        except:
+            print('Some error occured!')
         else:
-            return
-
-        if not btn:
-            return
-
-        if len(btn) > 10: 
-            btns = list(split_list(btn, 10)) 
-            keyword = f"{message.chat.id}-{message.message_id}"
-            BUTTONS[keyword] = {
-                "total" : len(btns),
-                "buttons" : btns
-            }
-        else:
-            buttons = btn
-            buttons.append(
-                [InlineKeyboardButton(text="🎶 Pages 1/1 🎶",callback_data="pages")]
-            )
-            await message.reply_text(
-                f"<b> Here is the result for {message.text}</b>",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-            return
-
-        data = BUTTONS[keyword]
-        buttons = data['buttons'][0].copy()
-
-        buttons.append(
-            [InlineKeyboardButton(text="🎸 NEXT 🎸",callback_data=f"next_0_{keyword}")]
-        )    
-        buttons.append(
-            [InlineKeyboardButton(text=f"🎶 Pages 1/{data['total']}",callback_data="pages")]
-        )
-
-        await message.reply_text(
-                f"<b> Here is the result for {message.text}</b>",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )    
-
-
-@Client.on_callback_query()
-async def cb_handler(client: Bot, query: CallbackQuery):
-    clicked = query.from_user.id
-    typed = query.message.reply_to_message.from_user.id
-
-    if (clicked == typed) or (clicked in AUTH_USERS):
-
-        if query.data.startswith("next"):
-            await query.answer()
-            ident, index, keyword = query.data.split("_")
-            data = BUTTONS[keyword]
-
-            if int(index) == int(data["total"]) - 2:
-                buttons = data['buttons'][int(index)+1].copy()
-
-                buttons.append(
-                    [InlineKeyboardButton("🎵 BACK 🎵", callback_data=f"back_{int(index)+1}_{keyword}")]
-                )
-                buttons.append(
-                    [InlineKeyboardButton(f"🎶 Pages {int(index)+2}/{data['total']}", callback_data="pages")]
-                )
-
-                await query.edit_message_reply_markup( 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-                return
-            else:
-                buttons = data['buttons'][int(index)+1].copy()
-
-                buttons.append(
-                    [InlineKeyboardButton("🎵 BACK 🎵", callback_data=f"back_{int(index)+1}_{keyword}"),InlineKeyboardButton("🎸 NEXT 🎸", callback_data=f"next_{int(index)+1}_{keyword}")]
-                )
-                buttons.append(
-                    [InlineKeyboardButton(f"🎶 Pages {int(index)+2}/{data['total']}", callback_data="pages")]
-                )
-
-                await query.edit_message_reply_markup( 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-                return
-
-
-        elif query.data.startswith("back"):
-            await query.answer()
-            ident, index, keyword = query.data.split("_")
-            data = BUTTONS[keyword] 
-
-            if int(index) == 1:
-                buttons = data['buttons'][int(index)-1].copy()
-
-                buttons.append(
-                    [InlineKeyboardButton("🎸 NEXT 🎸", callback_data=f"next_{int(index)-1}_{keyword}")]
-                )
-                buttons.append(
-                    [InlineKeyboardButton(f"🎶 Pages {int(index)}/{data['total']}", callback_data="pages")]
-                )
-
-                await query.edit_message_reply_markup( 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-                return   
-            else:
-                buttons = data['buttons'][int(index)-1].copy()
-
-                buttons.append(
-                    [InlineKeyboardButton("🎵 BACK 🎵", callback_data=f"back_{int(index)-1}_{keyword}"),InlineKeyboardButton("🎸 NEXT 🎸", callback_data=f"next_{int(index)-1}_{keyword}")]
-                )
-                buttons.append(
-                    [InlineKeyboardButton(f"🎶 Pages {int(index)}/{data['total']}", callback_data="pages")]
-                )
-
-                await query.edit_message_reply_markup( 
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-                return
-
-
-        elif query.data == "pages":
-            await query.answer()
-
-
-        elif query.data == "start_data":
-            await query.answer()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚚ HELP", callback_data="help_data"),
-                    InlineKeyboardButton("ABOUT ⚚", callback_data="about_data")],
-                [InlineKeyboardButton("꧁ JOIN OUR CHANNEL ꧂", url="https://t.me/ROCKHDMOVIES2021")]
-            ])
-
-            await query.message.edit_text(
-                script.START_MSG.format(query.from_user.mention),
-                reply_markup=keyboard,
-                disable_web_page_preview=True
-            )
-
-
-        elif query.data == "help_data":
-            await query.answer()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("BACK", callback_data="start_data"),
-                    InlineKeyboardButton("ABOUT", callback_data="about_data")],
-                [InlineKeyboardButton("〠 SUPPORT 〠", url="https://t.me/KicchaRequest")]
-            ])
-
-            await query.message.edit_text(
-                script.HELP_MSG,
-                reply_markup=keyboard,
-                disable_web_page_preview=True
-            )
-
-
-        elif query.data == "about_data":
-            await query.answer()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("BACK", callback_data="help_data"),
-                    InlineKeyboardButton("START", callback_data="start_data")],
-                [InlineKeyboardButton("SOURCE CODE", url="https://t.me/KicchaRequest")]
-            ])
-
-            await query.message.edit_text(
-                script.ABOUT_MSG,
-                reply_markup=keyboard,
-                disable_web_page_preview=True
-            )
-
-
-        elif query.data == "delallconfirm":
-            await query.message.delete()
-            await deleteallfilters(client, query.message)
-        
-        elif query.data == "delallcancel":
-            await query.message.reply_to_message.delete()
-            await query.message.delete()
-
+            print(f"files in '{channel_name}' linked to '{group_name}' ")
     else:
-        await query.answer("Thats not for you!!",show_alert=True)
+        try:
+            mycol.update_one({'_id': group_id},  {"$push": {"channel_details": channel_details}})
+        except:
+            print('Some error occured!')
+        else:
+            print(f"files in '{channel_name}' linked to '{group_name}' ")
 
 
-def split_list(l, n):
-    for i in range(0, len(l), n):
-        yield l[i:i + n]  
+async def ifexists(channel_id, group_id):
+    mycol = mydb["ALL DETAILS"]
+
+    query = mycol.count_documents( {"_id": group_id} )
+    if query == 0:
+        return False
+    else:
+        ids = mycol.find( {'_id': group_id} )
+        channelids = []
+        for id in ids:
+            for chid in id['channel_details']:
+                channelids.append(chid['channel_id'])
+
+        if channel_id in channelids:
+            return True
+        else:
+            return False
+
+
+async def deletefiles(channel_id, channel_name, group_id, group_name):
+    mycol1 = mydb["ALL DETAILS"]
+
+    try:
+        mycol1.update_one(
+            {"_id": group_id},
+            {"$pull" : { "channel_details" : {"channel_id":channel_id} } }
+        )
+    except:
+        pass
+
+    mycol2 = mydb[str(group_id)]
+    query2 = {'channel_id' : channel_id}
+    try:
+        mycol2.delete_many(query2)
+    except:
+        print("Couldn't delete channel")
+        return False
+    else:
+        print(f"filters from '{channel_name}' deleted in '{group_name}'")
+        return True
+
+
+async def deletealldetails(group_id):
+    mycol = mydb["ALL DETAILS"]
+
+    query = { "_id": group_id }
+    try:
+        mycol.delete_one(query)
+    except:
+        pass
+
+
+async def deletegroupcol(group_id):
+    mycol = mydb[str(group_id)]
+
+    if mycol.count() == 0:
+        return 1
+
+    try:    
+        mycol.drop()
+    except Exception as e:
+        print(f"delall group col drop error - {str(e)}")
+        return 2
+    else:
+        return 0
+
+
+async def channeldetails(group_id):
+    mycol = mydb["ALL DETAILS"]
+
+    query = mycol.count_documents( {"_id": group_id} )
+    if query == 0:
+        return False
+    else:
+        ids = mycol.find( {'_id': group_id} )
+        chdetails = []
+        for id in ids:
+            for chid in id['channel_details']:
+                chdetails.append(
+                    str(chid['channel_name']) + " ( <code>" + str(chid['channel_id']) + "</code> )"
+                )
+            return chdetails
+
+
+async def countfilters(group_id):
+    mycol = mydb[str(group_id)]
+
+    query = mycol.count()
+
+    if query == 0:
+        return False
+    else:
+        return query
+
+        
+async def findgroupid(channel_id):
+    mycol = mydb["ALL DETAILS"]
+
+    ids = mycol.find()
+    groupids = []
+    for id in ids:
+        for chid in id['channel_details']:
+            if channel_id == chid['channel_id']:
+                groupids.append(id['_id'])
+    return groupids
+
+
+async def searchquery(group_id, name):
+
+    mycol = mydb[str(group_id)]
+
+    filenames = []
+    filelinks = []
+
+    # looking for a better regex :(
+    pattern = name.lower().strip().replace(' ','.*')
+    raw_pattern = r"\b{}\b".format(pattern)
+    regex = re.compile(raw_pattern, flags=re.IGNORECASE)
+
+    query = mycol.find( {"file_name": regex} )
+    for file in query:
+        filename = "[" + str(file['file_size']//1048576) + "MB] " + file['file_name']
+        filenames.append(filename)
+        filelink = file['link']
+        filelinks.append(filelink)
+    return filenames, filelinks
+
+
