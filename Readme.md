@@ -66,7 +66,7 @@ OR
 #### PR's Are Very Welcome
 
 ## Deploy
-You can deploy this bot anywhere.
+https://github.com/sachinsheela61/Anikha-auto-filter-v2bot
 
 <i>**[Watch Deploying Tutorial...](https://youtu.be/KTearEPhumc)**</i>
 
