@@ -28,14 +28,14 @@ async def start(bot, update):
             await update.reply_cached_media(
                 file_id,
                 quote=True,
-                caption = caption,
+                caption = f"{file_name} \n @KicchaRequest,
                 parse_mode="html",
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [
                             InlineKeyboardButton
                                 (
-                                    'Developers', url="https://t.me/CrazyBotsz"
+                                    '࿈ 𝐎𝐮𝐫 𝐆𝐫𝐨𝐮𝐩 ࿈', url="https://t.me/KicchaRequest"
                                 )
                         ]
                     ]
